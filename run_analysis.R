@@ -1,0 +1,105 @@
+# Name: run_analysis.R
+# Date: October 3rd, 2020
+# Description: Analyse Human Activity Recognition Using Smartphones Dataset from [1]
+# [1] Davide Anguita, Alessandro Ghio, Luca Oneto, Xavier Parra and Jorge L. Reyes-Ortiz. 
+# Human Activity Recognition on Smartphones using a Multiclass Hardware-Friendly Support 
+# Vector Machine. International Workshop of Ambient Assisted Living (IWAAL 2012). 
+# Vitoria-Gasteiz, Spain. Dec 2012
+#
+# This R script does the following:
+# 
+# 1. Merging the training and the test sets to create one data set.
+# 2. Extracts only the measurements on the mean and standard deviation for each measurement.
+# 3. Uses descriptive activity names to name the activities in the data set
+# 4. Appropriately labels the data set with descriptive variable names.
+# 5. From the data set in step 4, creates a second, independent tidy data set with the average of each variable for each activity and each subject.
+
+library(plyr)
+library(dplyr)
+library(reshape2)
+
+# Creating data directory
+if (!file.exists("./data")){ dir.create("./data")}
+
+# Downloading data set
+fileUrl <- "https://d396qusza40orc.cloudfront.net/getdata/projectfiles/UCI%20HAR%20Dataset.zip"
+temporalFile <-  tempfile()
+download.file(fileUrl, temporalFile)
+unzip(temporalFile, exdir = "./data")
+unlink(temporalFile)
+rm(fileUrl, temporalFile)
+
+# Reading test files
+subjectTest <- read.delim ("./data/UCI HAR Dataset/test/subject_test.txt", header=FALSE, col.names = c("subjectId"))
+testActivityLabels <- read.delim ("./data/UCI HAR Dataset/test/y_test.txt", header=FALSE, col.names = c("activityLabel"))
+testSet <- read.delim ("./data/UCI HAR Dataset/test/X_test.txt", header=FALSE, sep = "")
+
+# Reading train files
+subjectTrain <- read.delim ("./data/UCI HAR Dataset/train/subject_train.txt", header=FALSE, col.names = c("subjectId"))
+trainActivityLabels <- read.delim ("./data/UCI HAR Dataset/train/y_train.txt", header=FALSE, col.names = c("activityLabel"))
+trainSet <- read.delim ("./data/UCI HAR Dataset/train/X_train.txt", header=FALSE, sep = "")
+
+# Reading labels files
+activityLabels <- read.delim ("./data/UCI HAR Dataset/activity_labels.txt", header=FALSE, sep = "", col.names = c("activityLabel", "activityName"))
+features <- read.delim ("./data/UCI HAR Dataset/features.txt", header=FALSE, sep = "", col.names = c("variableLabel", "variableName"))
+
+# Joining rows for each train and test file type
+totalSubjects <- rbind (subjectTrain, subjectTest)
+totalActivityLabels <- rbind (trainActivityLabels, testActivityLabels)
+totalSet <- rbind (trainSet, testSet)
+
+# Removing data not longer needed
+rm (subjectTrain, trainActivityLabels,trainSet, subjectTest, testActivityLabels, testSet)
+
+# Extracting mean() and std() index and values from features data set
+measures <- grep ("mean\\(\\)|std\\(\\)", features[,2])
+measuresNames <- grep ("mean\\(\\)|std\\(\\)", features[,2], value=TRUE)
+
+# Removing feature data set, not longer needed
+rm(features)
+
+# Extracting mean() and std() measures from total data set
+totalSet <- totalSet[,measures]
+names(totalSet) <- measuresNames
+
+# Joining subjects, activities and mean and standard deviation to create one data set
+totalSet <- cbind(totalSubjects, totalActivityLabels,totalSet)
+
+# Removing data not longer needed
+rm (totalSubjects, totalActivityLabels, measures, measuresNames)
+
+# Converting to character subjectId and activityLabel
+totalSet$subjectId <- as.character(totalSet$subjectId)
+totalSet$activityLabel <- as.character(totalSet$activityLabel)
+
+# Converting to character activityLabel and activityName
+activityLabels$activityLabel <- as.character(activityLabels$activityLabel)
+activityLabels$activityName <- as.character(activityLabels$activityName)
+
+# Using descriptive activity names to name the activities in the data set
+totalSet$activityLabel <- mapvalues(totalSet$activityLabel, activityLabels$activityLabel, activityLabels$activityName, warn_missing = TRUE)
+
+# Removing data not longer needed
+rm (activityLabels)
+
+# Appropriately labels the data set with descriptive variable names.
+
+names(totalSet) <- gsub("\\(\\)", "",names(totalSet))
+names(totalSet) <- sub("activityLabel", "activityName", names(totalSet))
+names(totalSet) <- sub("^t", "Time", names(totalSet))
+names(totalSet) <- sub("^f", "Frequency", names(totalSet))
+names(totalSet) <- sub("Acc", "Accelerometer", names(totalSet))
+names(totalSet) <- sub("Gyro", "Gyroscope", names(totalSet))
+
+# Creates a second, independent tidy data set with the average of each variable for each activity and each subject.
+meltedDataSet <- melt(totalSet, id=c("subjectId","activityName"))
+tidyDataSet <- dcast (meltedDataSet, subjectId + activityName ~ variable, mean)
+
+# Removing data not longer needed
+rm (meltedDataSet)
+
+# Adding Average to variables
+names(tidyDataSet)[3:68] <- paste0("Average",names(tidyDataSet)[3:68])
+
+str(tidyDataSet)
+write.table (tidyDataSet,"./data/tidyDataSet.txt", row.name=FALSE)
